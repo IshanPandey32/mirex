@@ -1,6 +1,6 @@
-#MusicScope-CL
+# 🎵 MusicScope
 
-**Detecting AI-Generated Music by fusing Contrastive Surface Learning with Structural "Narrative Logic."**
+## Detecting AI-Generated Music by fusing Contrastive Surface Learning with Structural "Narrative Logic."
 
 MusicScope-CL is our submission architecture for **MIREX 2026 — AI-Generated Music Detection**. It's directly inspired by **StoryScope**, an NLP paper whose core insight was:
 
@@ -277,3 +277,11 @@ This project's methodology is adapted from the **StoryScope** paper's approach t
 ## 🗒️ Status
 
 🚧 Active development for MIREX 2026 submission. Contributions and issue reports welcome.
+
+---
+
+## Author & Citation
+
+- **Task:** MIREX 2026 AI-Generated Music Detection
+- **Author:** Ishan Pandey ([isdp0415@gmail.com](mailto:isdp0415@gmail.com))
+- **Repository:** [IshanPandey32/mirex](https://github.com/IshanPandey32/mirex)
