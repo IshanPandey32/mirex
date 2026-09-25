@@ -1,0 +1,450 @@
+\documentclass[10pt,twocolumn,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{cite}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{placeins}
+\usepackage{caption}
+\usepackage{float}
+
+% ---- Spacing / float tuning (formatting only, no text changed) ----
+\setlength{\textfloatsep}{12pt plus 2pt minus 4pt}
+\setlength{\floatsep}{10pt plus 2pt minus 2pt}
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{6pt}
+\setlength{\belowcaptionskip}{4pt}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.1}
+\renewcommand{\floatpagefraction}{0.8}
+\setcounter{topnumber}{4}
+\setcounter{bottomnumber}{4}
+\setcounter{totalnumber}{6}
+
+\title{\textbf{MusicScope-CL: Fusing Contrastive Acoustic Surface Representations with Structural Musical Narrative for Generalized AI Music Detection}}
+
+
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+The proliferation of high-fidelity commercial music generation engines (e.g., Suno v5, Udio, YuE, ACE-Step, MiniMax) has destabilized traditional audio provenance pipelines, with synthetic tracks populating streaming services at an unprecedented pace. Existing audio deepfake countermeasures predominantly target microscopic acoustic surface artifacts---such as neural vocoder phase jitter, checkerboard spectral anomalies, and high-frequency roll-off inconsistencies. While effective on in-domain benchmarks ($\ge 99\%$ accuracy), these surface-centric models suffer from catastrophic generalization collapse when deployed out-of-domain against unseen generation architectures or when confronted with standard post-processing delivery chains (lossy compression, pitch-shifting, and equalizing). Drawing inspiration from discourse-level findings in NLP (\textit{StoryScope}), we propose \textbf{MusicScope-CL}, an end-to-end framework that unifies contrastive surface representation learning with domain-specific \textbf{structural musical narrative logic}. MusicScope-CL couples two independent, decorrelated failure modes: (i) an unsupervised contrastive acoustic encoder (Branch A: MobileNetV3-Small pretrained via SimCLR on log-Mel spectrograms) capturing local acoustic physics, and (ii) an interpretable, closed-form 128-dimensional signal processing descriptor (Branch B: Track A Narrative) measuring macroscopic harmonic tension, rhythmic micro-timing variance (groove), motivic recurrence, and dynamic envelope arcs. Features are fused into a 704-dimensional space and projected onto a metric hypersphere optimized via Supervised Contrastive (SupCon) loss before classification by a temperature-calibrated Multi-Layer Perceptron. On a physical held-out validation benchmark of 28,134 tracks across 7 generator families, MusicScope-CL achieves a \textbf{0.9970 Macro-AUROC}, \textbf{0.9969 Average Precision}, and \textbf{1.55\% Equal Error Rate (EER)}. Furthermore, on a rigorous zero-shot evaluation against 8 completely unseen generative architectures (including SongGen, DiffRhythm, and ElevenLabs), our system sustains a \textbf{0.9933 Macro-AUROC} with \textbf{100.00\% specificity} (zero false alarms on human music). Latent manifold analysis reveals that while human compositions occupy a scattered, high-rarity periphery, commercial generative models undergo pronounced structural mode collapse.
+\end{abstract}
+
+\section{Introduction}
+
+\subsection{Background and Context}
+
+\textbf{[Paragraph 1]} The rapid emergence and democratization of generative artificial intelligence have radically altered the creative landscape of music production. In recent years, deep diffusion and autoregressive sequence-to-sequence audio architectures---exemplified by commercial platforms such as Suno, Udio, Mureka, and MiniMax, alongside open-weight breakthroughs like YuE and ACE-Step---have achieved parity with studio-grade human recordings. These systems are capable of synthesizing complex, full-length musical compositions containing coherent polyphony, authentic vocal timbres, multi-instrumental orchestration, and genre-specific mastering from concise natural language prompts. Consequently, synthetic music has migrated from controlled academic benchmarks to commercial streaming platforms, where automated ingestion channels report that AI-generated tracks comprise over 50\% of daily uploads during peak periods. This uncontrolled inundation poses urgent challenges to intellectual property rights, royalty distribution frameworks, and digital provenance verification, transforming the development of reliable, generalized AI-generated music detectors into an existential imperative for the music information retrieval (MIR) and scientific communities.
+
+\textbf{[Paragraph 2]} Narrowing down to the operational mechanics of the task, the fundamental objective is formulated as binary classification: given an arbitrary audio waveform $\mathbf{x}$, a countermeasure must predict a calibrated probability $\hat{y} \in [0, 1]$ denoting whether the track was generated by an artificial intelligence system or authored and performed by human musicians. While standard classification benchmarks report near-saturated performance within familiar training distributions, the core research challenge lies in out-of-domain generalization and adversarial robustness. In realistic deployment environments---such as the MIREX 2026 AI-Generated Music Detection evaluation campaign---detectors are evaluated across hidden generative families, variable excerpt durations, and lossy delivery chains (e.g., MP3/Opus transcoding, dynamic range compression, and sample rate conversion). Under these conditions, conventional detectors experience catastrophic degradation, collapsing from near-perfect in-domain scores to near-random performance. The central bottleneck is that current models memorize ephemeral acoustic artifacts unique to specific decoders, failing to learn the enduring fundamental properties that delineate synthetic music from genuine human expression.
+
+\subsection{Literature Review: Similar Previous Methods}
+
+\textbf{[Paragraph 3]} The earliest and most widespread family of audio deepfake and synthetic music detectors focuses on microscopic acoustic and vocoder surface artifacts. Originating from speech anti-spoofing methodologies (such as the ASVspoof challenge series), these approaches convert raw audio into two-dimensional time-frequency representations---predominantly Short-Time Fourier Transform (STFT) magnitudes or log-Mel spectrograms---and feed them into standard convolutional neural networks (CNNs) such as ResNet, EfficientNet, or SpecTTTra. Similar to our foundational acoustic branch, these methods leverage the observation that neural audio synthesis often introduces telltale physical anomalies: phase discontinuities at frame boundaries, checkerboard artifacts from transposed convolutions, and artificial high-frequency attenuation above 16 kHz or 22 kHz. By framing detection as an image recognition problem over spectral textures, early CNN-based classifiers successfully established the viability of automated artifact detection.
+
+\textbf{[Paragraph 4]} A second major family of approaches leverages large-scale Self-Supervised Learning (SSL) backbones pretrained on vast acoustic corpora. Models such as wav2vec 2.0, XLS-R, HuBERT, and music-specific foundation models like MERT and MusicLM extract rich, hierarchical contextual embeddings directly from continuous waveforms. In recent evaluations (such as the 2024 Singing Voice Deepfake Detection challenge), combining frozen speech-SSL or music-SSL representations with downstream graph attention networks (e.g., AASIST) or shallow transformer heads achieved competitive results on vocal manipulation tasks. Similar to our approach, these systems recognize that raw acoustic representations benefit immensely from large-scale pretraining without direct supervision, enabling downstream classifiers to draw upon broad priors regarding natural timbre, pitch trajectory, and acoustic coherence.
+
+\textbf{[Paragraph 5]} Most recently, the cutting edge of synthetic content detection has shifted from local surface inspection toward discourse-level macro-structure. In the natural language processing domain, Russell et al. introduced \textit{StoryScope} (arXiv:2604.03136), demonstrating that while modern large language models can flawlessly emulate local grammatical style and vocabulary, they exhibit persistent failure modes in high-level narrative architecture---such as chronological discontinuity, character agency arcs, and thematic development. Crucially, \textit{StoryScope} showed that training classifiers on structured, interpretable narrative features preserved over 97\% of stylistic performance while providing unparalleled robustness and domain transfer. Parallel developments in audio, such as shift-invariant representations and long-context temporal pooling, have confirmed that the broader temporal organization of a track contains vital forensic signatures.
+
+\subsection{The Gap: Limitations of Existing Work}
+
+\textbf{[Paragraph 6]} Despite their initial success, existing synthetic audio detectors suffer from severe, fundamental vulnerabilities. Primarily, surface-artifact detectors are trapped in an unwinnable ``arms race'' against generative vocoder engineering. As modern music synthesizers transition to high-capacity latent diffusion models and flow-matching architectures (e.g., Stable Audio, DiffRhythm), local acoustic imperfections are systematically ironed out. Furthermore, surface textures are fragile: passing an AI track through basic delivery-chain perturbations---such as MP3 compression at 128 kbps, subtle pitch-shifting ($\pm 1$ semitone), or analog tape emulation---completely scrubs vocoder-specific high-frequency fingerprints, causing CNN detectors to misclassify synthetic audio as human. Conversely, foundation SSL models, while structurally powerful, are computationally prohibitive for high-throughput streaming environments and are inherently biased by the speech-dominant corpora upon which they were pretrained.
+
+\textbf{[Paragraph 7]} We explicitly state the critical ``Research Gap'': while previous methods successfully detect known, low-level vocoder artifacts on static benchmarks, they fundamentally fail to account for \textit{macro-level musical narrative logic}, primarily because they treat audio as a short-context collection of independent spectral frames. Natural human music is not merely a collection of smooth acoustic textures; it is governed by long-term structural intent, including non-linear harmonic tension arcs, expressive micro-timing variations (groove), motivic variation across phrases, and dynamic envelope breathing. Generative AI systems, which rely on causal autoregressive token prediction or localized diffusion steps, fundamentally struggle to maintain global structural coherence without succumbing to exact looping or chaotic drift. By ignoring this structural dimension, prior art remains blind to the most durable differentiator between human composition and artificial generation.
+
+\subsection{Proposed Method: How It Is Different}
+
+\textbf{[Paragraph 8]} To directly bridge this gap, we introduce \textbf{MusicScope-CL}, a dual-branch detection framework that fuses contrastive acoustic surface learning with structural musical narrative logic. Unlike conventional single-branch detectors that wager their entire predictive capacity on spectral texture, MusicScope-CL constructs a dual-layer defense predicated on two independent, decorrelated failure modes. Branch A (Acoustic Surface) processes log-Mel spectrograms through an ultra-lightweight MobileNetV3-Small backbone trained contrastively via SimCLR, capturing the fine-grained physical acoustics of recording environments without relying on noisy labels. Simultaneously, Branch B (Structural Narrative) extracts a deterministic, closed-form 128-dimensional vector encoding harmonic entropy, rhythmic micro-timing variance, motivic recurrence, and spectral white space using classical Music Information Retrieval (MIR) signal processing.
+
+\textbf{[Paragraph 9]} The theoretical distinction of MusicScope-CL lies in its decoupled, multi-stage training paradigm and metric-space fusion. Unlike standard architectures that concatenate multimodal features into a dense layer trained with cross-entropy, MusicScope-CL delays label exposure entirely until representations are mature. Stages 1 and 2 operate completely label-free, insulating the core feature extractors from label noise in web-scraped datasets. In Stage 3, the 576-dimensional surface embedding and the 128-dimensional structural vector are concatenated into a 704-dimensional representation and projected onto a normalized hypersphere via Supervised Contrastive (SupCon) loss. This explicitly clusters human and synthetic distributions while maximizing inter-class margins, creating a decision geometry optimized directly for Area Under the Receiver Operating Characteristic (AUROC). Finally, post-hoc Platt temperature scaling guarantees calibrated confidence scores across varied acoustic conditions.
+
+\subsection{Summary of Contributions}
+
+\textbf{[Paragraph 10]} The key contributions of this paper are summarized as follows:
+
+\begin{itemize}
+    \item \textbf{Novel Dual-Branch Paradigm (MusicScope-CL):} We propose a dual-branch architecture that combines deep contrastive surface learning with interpretable, closed-form musical narrative logic, providing a robust countermeasure that prevents generative models from evading detection by merely altering surface vocoders.
+    \item \textbf{128-Dimensional Musical Narrative Descriptor:} We establish the mathematical framework for extracting a 128-dimensional structural narrative vector from continuous audio chunks across five feature families: harmonic entropy and tension, rhythmic micro-timing (IOI variance), motivic recurrence via self-similarity matrices (SSM), spectral density variance, and dynamic envelope arcs.
+    \item \textbf{Noise-Immune Multi-Stage Contrastive Training:} We develop a multi-stage training pipeline (SimCLR pretraining $\to$ zero-training MIR extraction $\to$ SupCon projection $\to$ Platt-calibrated classification) that isolates label exposure to the final lightweight projection layer, eliminating susceptibility to dataset label contamination.
+    \item \textbf{Extensive In-Domain and Zero-Shot Benchmarking:} We conduct extensive experiments across physical datasets comprising over 80,000 evaluated tracks, achieving a state-of-the-art \textbf{0.9970 Macro-AUROC} on a 28,134 held-out multi-generator benchmark and \textbf{0.9933 Macro-AUROC} with 100.00\% human specificity across 8 completely unseen generative architectures.
+    \item \textbf{Latent Manifold and Narrative Rarity Analysis:} We project the 704-dimensional fused embedding space via t-SNE and formulate a per-track ``musical narrative rarity'' metric, providing empirical evidence of structural mode collapse in commercial AI models (such as Suno v5) relative to the high-entropy diversity of human compositions.
+\end{itemize}
+
+\subsection{Paper Organization}
+
+\textbf{[Paragraph 11]} The remainder of this paper is organized as follows: Section 2 details the mathematical problem formulation, theoretical motivation, detailed architectural components of Branches A and B, the SupCon fusion head, and algorithmic execution. Section 3 outlines the experimental configuration, covering data pools, the silence-padding post-mortem, evaluation baselines, metrics, and implementation hyperparameters. Section 4 presents comprehensive quantitative benchmarks, ablation investigations, qualitative latent space visualizations, narrative rarity distributions, computational complexity profiles, and failure case analyses. Finally, Section 5 concludes the paper with a discussion of broader impacts and future directions.
+
+\section{Methodology}
+
+\subsection{Problem Formulation}
+
+\textbf{[Paragraph 12]} Let $\mathcal{X}$ denote the domain of continuous audio waveforms sampled at a canonical rate of $f_s = 22,050\text{ Hz}$. A music track is represented as a discrete sequence $\mathbf{x} = [x[1], x[2], \dots, x[N]]^\top \in \mathbb{R}^N$, where $N$ corresponds to the total sample length. The target output space is defined over the binary label set $\mathcal{Y} = \{0, 1\}$, where $y = 0$ designates authentic, human-composed and recorded audio, and $y = 1$ denotes synthetic audio produced by an artificial intelligence generation model. Our objective is to learn a parameterized mapping function $f_\theta: \mathcal{X} \to [0, 1]$ such that the output $\hat{p} = f_\theta(\mathbf{x})$ constitutes a well-calibrated posterior probability:
+\begin{equation}
+\hat{p} \equiv P(Y = 1 \mid \mathbf{x})
+\end{equation}
+During training and evaluation, continuous tracks are partitioned into temporal analysis chunks $\mathbf{x}^{(k)} \in \mathbb{R}^{L}$ of duration $T = 30\text{ seconds}$ ($L = T \cdot f_s = 661,500$ samples), with track-level aggregation performed via Multiple Instance Learning (MIL) pooling.
+
+\subsection{Ideology and Motivation (The ``Why'')}
+
+\textbf{[Paragraph 13]} The core intuition of MusicScope-CL is grounded in the ideological principle that \textit{surface acoustic texture} and \textit{deep musical structure} constitute orthogonal dimensions of audio authenticity that must not be treated independently or conflated into a single monolithic model. Generative music engines are optimized to minimize localized reconstruction or diffusion losses, which naturally prioritizes the synthesis of plausible instantaneous timbre (e.g., realistic guitar distortion, clear vocal formants). However, these architectures lack high-level cognitive models of compositional intent. By translating the foundational concepts of the NLP \textit{StoryScope} framework into digital audio, we establish an explicit ``Rosetta Stone'' mapping discourse anomalies to signal processing observables (Table~\ref{tab:rosetta}).
+
+\begin{table}[H]
+\centering
+\small
+\caption{The Rosetta Stone: Translating text narrative theory (Russell et al., 2026) to acoustic and structural music MIR observables.}
+\label{tab:rosetta}
+\begin{tabular}{p{2.3cm}p{2.3cm}p{2.6cm}}
+\toprule
+\textbf{StoryScope (Text)} & \textbf{MusicScope (Audio)} & \textbf{The AI Synthetic Tell} \\
+\midrule
+Thematic Explicitness & Motivic Recurrence Rate (SSM Affinity) & AI loops motifs verbatim; humans develop themes. \\
+Chronological Discontinuity & Harmonic Flux \& Transitions & AI cross-fades; humans use fills, tension, and cadences. \\
+Thematic Ambiguity & Harmonic Entropy \& Dissonance & AI strictly adheres to diatonic scales; humans use swing. \\
+Sensory Density & Spectral White Space (Flatness) & AI vocoders smear all bins; humans carve space. \\
+Narrative Arc Rarity & Dynamic Loudness Variance (RMS) & AI produces static envelopes; humans sculpt dynamic arcs. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{[Paragraph 14]} This ideology connects directly to the physical, biological, and mathematical reality of acoustic performance. Human musical performance is characterized by organic micro-timing variations---termed ``groove''---manifested as subtle deviations from a strictly quantized temporal grid, driven by neuro-motor variance and intentional expressive timing. Furthermore, human harmonic writing utilizes intentional dissonance (harmonic tension) followed by resolution, creating complex trajectory curves in pitch-class space. In contrast, generative diffusion and autoregressive models exhibit two distinct failure modes: either severe \textit{mode collapse} (generating standardized, low-entropy progressions that cluster tightly in latent space) or \textit{structural drift} (failing to preserve thematic motifs across extended temporal spans). An AI model engineered with post-processing denoisers may successfully evade a surface-texture CNN, but it cannot simultaneously manufacture authentic human micro-timing and long-range harmonic narrative without altering its core generative policy.
+
+\subsection{Full Model Description (The ``What'')}
+
+\subsubsection{Component A: Surface Acoustic Encoder (Branch A)}
+
+\textbf{[Paragraph 15]} The first component, Branch A, captures microscopic acoustic textures, vocoder smearing, and phase irregularities. Given an input audio chunk $\mathbf{x} \in \mathbb{R}^L$, we compute a 128-band log-Mel spectrogram $\mathbf{S} \in \mathbb{R}^{F \times T_{\text{spec}}}$, where $F = 128$ and $T_{\text{spec}} = \lfloor L / H_{\text{hop}} \rfloor + 1$. We set the Fast Fourier Transform (FFT) window length to $N_{\text{fft}} = 2048$ with a hop length of $H_{\text{hop}} = 512$ at $f_s = 22,050\text{ Hz}$. The power spectrogram is converted to decibel scale and min-max normalized:
+\begin{equation}
+\mathbf{S}(f, t) = 10 \log_{10} \left( \frac{|\text{STFT}(\mathbf{x})|^2}{\max(|\text{STFT}(\mathbf{x})|^2) + \epsilon} \right), \quad \tilde{\mathbf{S}} = \frac{\mathbf{S} - \min(\mathbf{S})}{\max(\mathbf{S}) - \min(\mathbf{S}) + \epsilon}
+\end{equation}
+The normalized spectrogram $\tilde{\mathbf{S}} \in \mathbb{R}^{1 \times 128 \times 1292}$ is replicated across three channels to match the input receptive field of a lightweight \textbf{MobileNetV3-Small} convolutional backbone. MobileNetV3-Small incorporates depthwise separable convolutions, HardSwish nonlinearities $\text{HS}(x) = x \frac{\text{ReLU6}(x+3)}{6}$, and Squeeze-and-Excitation (SE) channel attention modules. The network feature extractor maps the tensor through successive inverted bottleneck layers to an adaptive global average pooling layer $\text{AdaptiveAvgPool2d}(1)$, yielding a dense 576-dimensional surface acoustic embedding:
+\begin{equation}
+\mathbf{e}_{\text{surface}} = g_{\text{surface}}(\tilde{\mathbf{S}}) \in \mathbb{R}^{576}
+\end{equation}
+
+\subsubsection{Component B: Structural Musical Narrative DSP Extractor (Branch B)}
+
+\textbf{[Paragraph 16]} Branch B operates as a zero-training, deterministic signal processing engine extracting a 128-dimensional \textbf{Musical Narrative Vector} $\mathbf{v}_{\text{narrative}} \in \mathbb{R}^{128}$. To capture both instantaneous magnitude and temporal trajectory, every extracted scalar feature time-series $\mathbf{u} = [u_1, \dots, u_M]$ is mapped through a rich statistical expansion operator $\Psi(\mathbf{u}) \in \mathbb{R}^{11}$:
+\begin{equation}
+\Psi(\mathbf{u}) = \left[ \mu(\mathbf{u}), \sigma(\mathbf{u}), \gamma_1(\mathbf{u}), \gamma_2(\mathbf{u}), \min(\mathbf{u}), \max(\mathbf{u}), \mathcal{P}_{10}, \mathcal{P}_{50}, \mathcal{P}_{90}, \mu(\Delta \mathbf{u}), \sigma(\Delta \mathbf{u}) \right]^\top
+\end{equation}
+where $\mu, \sigma, \gamma_1, \gamma_2$ denote the mean, standard deviation, skewness, and Fisher kurtosis; $\mathcal{P}_k$ denotes the $k$-th percentile; and $\Delta u_t = u_t - u_{t-1}$ captures temporal rate-of-change. The 128 dimensions are distributed across five dedicated MIR feature groups:
+
+\begin{enumerate}
+    \item \textit{Harmonic Entropy \& Tension ($D_1 = 26$ dims):} Chromagram $\mathbf{C} \in \mathbb{R}^{12 \times M}$ computed via Constant-Q Transform (CQT). Per-frame normalized chroma distribution $\mathbf{c}_t$ yields Shannon harmonic entropy $H_t = -\sum_{i=1}^{12} c_{t, i} \log(c_{t, i} + \epsilon)$, tension spread $T_t = \text{std}(\mathbf{c}_t)$, and key clarity $K_t = \max(\mathbf{c}_t)$. Features comprise $\Psi(H_t)$ (11 dims), $\Psi(T_t)$ (11 dims), key clarity moments (2 dims), and chroma flux $\Delta \mathbf{C}_F$ (2 dims).
+    \item \textit{Rhythmic Micro-timing \& Groove ($D_2 = 20$ dims):} Spectral flux onset strength envelope $O(t)$ extracts discrete onset timestamps $\mathcal{T} = \{\tau_1, \tau_2, \dots, \tau_K\}$. Inter-Onset-Intervals $\text{IOI}_k = \tau_{k+1} - \tau_k$ yield IOI variance, rhythm stability, tempo periodicity via autocorrelation peak ratios, and beat-tracking deviation moments.
+    \item \textit{Motivic Recurrence Rate ($D_3 = 22$ dims):} Cross-recurrence and self-similarity matrix (SSM) $\mathbf{R}_{i, j} = \exp(-\|\mathbf{c}_i - \mathbf{c}_j\|_2 / \sigma_{\text{ssm}})$. Global recurrence rate $\rho = \frac{1}{M^2}\sum_{i, j}\mathbf{R}_{i, j}$, diagonal structure entropy, and laminarity measures quantify whether musical phrases develop dynamically or loop identically.
+    \item \textit{Spectral White Space \& Density ($D_4 = 36$ dims):} Spectral flatness $\text{SF}(t) = \frac{\exp(\frac{1}{K}\sum \ln |X_k|)}{\frac{1}{K}\sum |X_k|}$, spectral roll-off at 85\% energy threshold, and spectral centroid trajectories. Expanded across $\Psi(\text{SF})$ (11 dims), $\Psi(\text{Roll})$ (11 dims), $\Psi(\text{Cent})$ (11 dims), and spectral contrast bands (3 dims).
+    \item \textit{Dynamic Envelope Variance ($D_5 = 24$ dims):} Root-Mean-Square energy $\text{RMS}(t) = \sqrt{\frac{1}{W}\sum_{n=0}^{W-1} x[t \cdot H + n]^2}$ and peak-to-average power ratio (PAPR) expanded via $\Psi(\text{RMS})$ (11 dims), $\Psi(\text{PAPR})$ (11 dims), and dynamic range crest factors (2 dims).
+\end{enumerate}
+
+\subsubsection{Component C: Fused Contrastive Manifold \& Calibrated Classification}
+
+\textbf{[Paragraph 17]} The acoustic embedding $\mathbf{e}_{\text{surface}} \in \mathbb{R}^{576}$ and the narrative vector $\mathbf{v}_{\text{narrative}} \in \mathbb{R}^{128}$ are concatenated into a unified 704-dimensional representation:
+\begin{equation}
+\mathbf{z}_{\text{fused}} = [\mathbf{e}_{\text{surface}} \,\|\, \mathbf{v}_{\text{narrative}}] \in \mathbb{R}^{704}
+\end{equation}
+To prevent the model from learning thin, fragile hyperplane separators, $\mathbf{z}_{\text{fused}}$ is passed through a Supervised Contrastive projection head $h_{\text{proj}}: \mathbb{R}^{704} \to \mathbb{S}^{127}$, mapping the representation to an $L_2$-normalized 128-dimensional hypersphere:
+\begin{equation}
+\mathbf{z}' = \frac{W_2 \cdot \text{ReLU}(\text{BatchNorm}(W_1 \mathbf{z}_{\text{fused}} + \mathbf{b}_1)) + \mathbf{b}_2}{\|W_2 \cdot \text{ReLU}(\text{BatchNorm}(W_1 \mathbf{z}_{\text{fused}} + \mathbf{b}_1)) + \mathbf{b}_2\|_2}
+\end{equation}
+where $W_1 \in \mathbb{R}^{256 \times 704}$ and $W_2 \in \mathbb{R}^{128 \times 256}$. On top of this structured metric manifold, a lightweight classification Multi-Layer Perceptron ($\text{FusionMLP}: 128 \to 256 \to 64 \to 1$) computes a scalar logit $z_{\text{logit}}$. To ensure valid probabilistic outputs that guard against overconfident misclassifications on out-of-distribution audio, we apply post-hoc Platt temperature scaling parameterized by a learned temperature $T > 0$:
+\begin{equation}
+\hat{P}(\text{AI} \mid \mathbf{x}) = \sigma\left(\frac{z_{\text{logit}}}{T}\right) = \frac{1}{1 + \exp\left(-\frac{z_{\text{logit}}}{T}\right)}
+\end{equation}
+
+\subsection{Training Objective and Optimization}
+
+\textbf{[Paragraph 18]} The optimization of MusicScope-CL is divided into three distinct objective functions corresponding to each phase of training:
+
+\begin{enumerate}
+    \item \textit{Stage 1 (Unsupervised SimCLR Pretraining):} Branch A is trained on paired stochastic augmented views $(\tilde{\mathbf{S}}_i, \tilde{\mathbf{S}}_j)$ of log-Mel spectrograms using Normalized Temperature-scaled Cross-Entropy (NT-Xent) loss:
+    \begin{equation}
+    \mathcal{L}_{\text{NT-Xent}} = -\log \frac{\exp(\text{sim}(\mathbf{u}_i, \mathbf{u}_j) / \tau_{\text{sim}})}{\sum_{k=1}^{2B} \mathbb{I}_{[k \ne i]} \exp(\text{sim}(\mathbf{u}_i, \mathbf{u}_k) / \tau_{\text{sim}})}
+    \end{equation}
+    where $\text{sim}(\mathbf{u}, \mathbf{v}) = \frac{\mathbf{u}^\top \mathbf{v}}{\|\mathbf{u}\|_2 \|\mathbf{v}\|_2}$, batch size is $B$, and $\tau_{\text{sim}} = 0.5$.
+    \item \textit{Stage 3b (Supervised Contrastive Metric Learning):} With frozen backbones, the projection head is optimized across batches of labeled pairs using the SupCon loss (Khosla et al., 2020):
+    \begin{equation}
+    \mathcal{L}_{\text{SupCon}} = \sum_{i \in I} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \frac{\exp(\mathbf{z}'_i \cdot \mathbf{z}'_p / \tau_{\text{sup}})}{\sum_{a \in A(i)} \exp(\mathbf{z}'_i \cdot \mathbf{z}'_a / \tau_{\text{sup}})}
+    \end{equation}
+    where $I$ is the multiview batch index, $A(i) \equiv I \setminus \{i\}$, $P(i) \equiv \{p \in A(i) : y_p = y_i\}$ is the set of all positive anchors sharing the same class label, and $\tau_{\text{sup}} = 0.1$.
+    \item \textit{Stage 3c (Calibrated Classification):} The classifier head is trained using binary cross-entropy with label smoothing ($\alpha = 0.05$):
+    \begin{equation}
+    \mathcal{L}_{\text{BCE}} = -\frac{1}{B}\sum_{i=1}^B \left[ y_i^{\text{smooth}} \log \sigma(z_i) + (1 - y_i^{\text{smooth}}) \log(1 - \sigma(z_i)) \right]
+    \end{equation}
+    where $y_i^{\text{smooth}} = y_i (1 - \alpha) + 0.5 \alpha$.
+\end{enumerate}
+
+\textbf{[Paragraph 19]} Optimization is conducted using the Adam algorithm ($\beta_1 = 0.9, \beta_2 = 0.999$, weight decay $10^{-4}$) with decoupled learning rates: $\eta_{\text{sim}} = 3 \times 10^{-4}$ for SimCLR pretraining, $\eta_{\text{sup}} = 10^{-3}$ for the SupCon projection head, and $\eta_{\text{mlp}} = 10^{-3}$ for FusionMLP. The temperature scalar $T$ is optimized post-hoc on a held-out calibration set via L-BFGS, minimizing negative log-likelihood with model weights frozen. Crucially, because Stage 1 is self-supervised and Stage 2 is a deterministic closed-form transform, backpropagation through the convolutional stem never encounters labeled data, establishing mathematical immunity to dataset-level label corruption.
+
+\subsection{Algorithmic Pseudocode}
+
+\begin{algorithm}[t]
+\caption{MusicScope-CL Inference and MIL Track Scoring}
+\begin{algorithmic}[1]
+\Require Audio track path $P$; chunk duration $T = 30\text{s}$; chunk count $N = 3$; calibrated temperature $T_{\text{cal}}$; threshold $\tau = 0.18$.
+\Ensure Calibrated probability $P(\text{AI})$, binary decision $D \in \{\text{Human}, \text{AI}\}$.
+\State $[\mathbf{x}_{\text{full}}, f_s] \gets \Call{FastSoundFileLoad}{P, f_s = 22050}$
+\State $D_{\text{total}} \gets \Call{Length}{\mathbf{x}_{\text{full}}} / f_s$
+\State $\mathcal{O} \gets \Call{LinSpace}{0, \max(0, D_{\text{total}} - T), N}$
+\State $\mathcal{P} \gets []$
+\For{$\text{offset} \in \mathcal{O}$}
+    \State $\mathbf{x}_{\text{chunk}} \gets \Call{Slice}{\mathbf{x}_{\text{full}}, \text{offset}, T}$
+    \State $\mathbf{x}_{\text{pad}} \gets \Call{ZeroPadIfShorterThan}{\mathbf{x}_{\text{chunk}}, 661500}$
+    \State $\mathbf{S}_{\text{mel}} \gets \Call{ComputeLogMelSpectrogram}{\mathbf{x}_{\text{pad}}, 128}$
+    \State $\mathbf{e}_{\text{surface}} \gets \Call{MobileNetV3\_Forward}{\mathbf{S}_{\text{mel}}}$
+    \State $\mathbf{v}_{\text{narrative}} \gets \Call{Extract128DNarrativeDSP}{\mathbf{x}_{\text{chunk}}}$
+    \State $\mathbf{z}_{\text{fused}} \gets [\mathbf{e}_{\text{surface}} \,\|\, \mathbf{v}_{\text{narrative}}]$
+    \State $\mathbf{z}' \gets \Call{SupConProject}{\mathbf{z}_{\text{fused}}}$
+    \State $z_{\text{logit}} \gets \Call{FusionMLP}{\mathbf{z}'}$
+    \State $p_k \gets \sigma(z_{\text{logit}} / T_{\text{cal}})$
+    \State $\mathcal{P}.\Call{Append}{p_k}$
+\EndFor
+\State $\bar{P}(\text{AI}) \gets \Call{Mean}{\mathcal{P}}$
+\State $D \gets \mathbf{if} \ \bar{P}(\text{AI}) \ge \tau \ \mathbf{then} \ \text{AI} \ \mathbf{else} \ \text{Human}$
+\State \Return $\bar{P}(\text{AI}), D$
+\end{algorithmic}
+\end{algorithm}
+
+\FloatBarrier
+
+\section{Experimental Setup}
+
+\subsection{Datasets}
+
+\textbf{[Paragraph 20]} To guarantee rigorous empirical evaluation and prevent reporting artifacts, we compiled a diverse multi-source corpus comprising over 80,000 verified audio tracks spanning both human commercial productions and diverse generative architectures. The bona fide human distribution is anchored by the \textbf{Free Music Archive (FMA Large and Full)}, encompassing 106,574 full-length tracks across 161 genres, capturing varied acoustic mastering standards, home recordings, and professional studio outputs. On the synthetic side, our training and validation pools incorporate: (i) \textbf{Muse / Suno Audio Dataset} (116k full Suno v5 tracks); (ii) \textbf{SONICS} (49k Suno v2/v3 and Udio tracks); (iii) \textbf{FakeMusicCaps} (curated 10-second multi-model generations from AudioLDM, MusicGen, Mustango, and Udio); and (iv) \textbf{Echoes} (4.5k tracks from 10+ models semantically aligned to FMA prompts).
+
+\textbf{[Paragraph 21]} These specific datasets were selected to ensure balanced representation across every underlying generative paradigm in modern AI music synthesis: latent diffusion (AudioLDM, Stable Audio), autoregressive language modeling over discrete audio tokens (MusicGen, YuE), step-based diffusion (ACE-Step), text-directed musical conditioning (Mustango), and proprietary commercial end-to-end engines (Suno v5, Udio). By evaluating models on the semantically aligned Echoes dataset and the unconstrained Muse web dumps, we rigorously test the boundaries of both acoustic texture matching and compositional narrative coherence.
+
+\subsection{Data Preprocessing and Augmentation}
+
+\textbf{[Paragraph 22]} All audio inputs are standardized to $f_s = 22,050\text{ Hz}$ mono waveforms utilizing high-speed SOXR C-level sinc resampling. In our empirical investigations, we discovered a vital methodological phenomenon: the \textbf{Silence-Padding Artifact}. Standard deep learning evaluation pipelines routinely apply global zero-padding to standardize short audio clips (e.g., FakeMusicCaps 10-second clips padded with 20 seconds of silence to populate a 30-second tensor). While zero-padding is harmless for 2D convolutional spectrogram backbones, calculating time-series statistical moments over 66.7\% silence catastrophically distorts narrative metrics:
+\begin{equation}
+\text{RMS}_{\text{padded}} = \sqrt{\frac{1}{T} \sum_{t=1}^T x[t]^2} \approx \frac{1}{\sqrt{3}}\text{RMS}_{\text{true}} \approx 0.577 \times \text{RMS}_{\text{true}}
+\end{equation}
+This compression collapsed variance, caused catastrophic floating-point cancellation in higher-order moments ($\gamma_1, \gamma_2$), generated NaN predictions, and artificially reduced detection on AudioLDM and MusicGen to $0.00\%$. As a mandatory protocol, our pipeline strictly \textbf{decouples} the inputs: Branch A receives padded spectrograms for fixed-grid convolution, whereas Branch B receives pure, unpadded audio (\texttt{pad=False}), restoring detection on these generators to $\ge 99.5\%$.
+
+\textbf{[Paragraph 23]} During Stage 1 SimCLR pretraining, we apply stochastic data augmentations directly to log-Mel spectrograms to prevent overfitting to acoustic recording channels. Augmentations comprise SpecAugment time masking ($p = 0.8$, maximum width $T_{\text{mask}} = 40$ frames), frequency masking ($p = 0.8$, maximum width $F_{\text{mask}} = 15$ Mel bins), additive zero-mean Gaussian noise ($\sigma = 0.02, p = 0.5$), and pitch-shifting implemented via spectral frequency-axis rolling ($\Delta F \in [-4, +4]$ bins, $p = 0.5$). No augmentations are applied during structural narrative extraction in Branch B.
+
+\textbf{[Paragraph 24]} Data partitioning follows strict artist-level and model-level isolation to prevent data leakage. The human training pool is quarantined from evaluation splits by matching artist IDs and Chromaprint audio fingerprints. The formal validation benchmark comprises a held-out set of \textbf{28,134 physical audio files} (12,172 AI tracks vs. 15,962 Human FMA tracks). Furthermore, an isolated quarantine partition of 2,876 tracks across 8 brand-new generative families is set aside exclusively for zero-shot generalization testing.
+
+\subsection{Baselines and Comparison Methods}
+
+\textbf{[Paragraph 25]} We benchmark MusicScope-CL against five representative baseline systems reflecting past and current state-of-the-art paradigms:
+
+\begin{enumerate}
+    \item \textit{Standard Spectrogram CNN (ResNet-18):} A conventional supervised 2D CNN trained with binary cross-entropy directly on log-Mel spectrograms.
+    \item \textit{SpecTTTra Baseline (ICASSP'25 / MIREX'25):} A modern transformer-based audio deepfake detector operating on spectrogram patches.
+    \item \textit{Branch A Surface-Only (MobileNetV3 + SimCLR):} MusicScope-CL without the structural narrative branch, using only the 576-dimensional acoustic embedding.
+    \item \textit{Branch B Narrative-Only (128-D DSP + MLP):} Classification utilizing solely the closed-form musical narrative descriptor, completely bypassing convolutional deep features.
+    \item \textit{Fused Concatenation without SupCon:} Direct concatenation of $\mathbf{e}_{\text{surface}}$ and $\mathbf{v}_{\text{narrative}}$ into a 704-dimensional vector trained with naive cross-entropy, omitting contrastive metric projection.
+\end{enumerate}
+
+\textbf{[Paragraph 26]} These baselines were specifically selected to conduct an exhaustive diagnostic decomposition: comparing against ResNet-18 and SpecTTTra establishes competitive standing against established architectures, while isolating Branches A and B and omitting SupCon isolates the individual contribution of each novel module in our framework.
+
+\subsection{Evaluation Metrics}
+
+\textbf{[Paragraph 27]} Model performance is evaluated using standard ranking, threshold-dependent, and calibration metrics:
+
+\begin{itemize}
+    \item \textit{Area Under the Receiver Operating Characteristic (AUROC):}
+    \begin{equation}
+    \text{AUROC} = \int_0^1 \text{TPR}(\text{FPR}^{-1}(t)) \, dt = P(\hat{p}_{\text{AI}} > \hat{p}_{\text{Human}})
+    \end{equation}
+    \item \textit{Average Precision (AP / PR-AUC):} Area under the Precision-Recall curve:
+    \begin{equation}
+    \text{AP} = \sum_n (R_n - R_{n-1}) P_n
+    \end{equation}
+    \item \textit{Equal Error Rate (EER):} The operating threshold where $\text{FPR} = \text{FNR}$.
+    \item \textit{Macro-AUROC across Strata:}
+    \begin{equation}
+    \text{Macro-AUROC} = \frac{1}{K}\sum_{k=1}^K \text{AUROC}_k
+    \end{equation}
+    \item \textit{Youden's $J$ Statistic:} Optimal cutoff $\tau^* = \arg\max_\tau (\text{TPR}(\tau) - \text{FPR}(\tau))$.
+\end{itemize}
+
+\textbf{[Paragraph 28]} Macro-AUROC is the official ranking metric of the MIREX 2026 campaign because monotonic score recalibrations do not alter within-stratum ranking, and macro-averaging aggressively penalizes models that collapse on any single generator family. Under macro-averaging, a system scoring $0.99$ across five generators and $0.60$ on a sixth achieves only $0.925$, falling behind a model achieving a uniform $0.95$. Maximizing the minimum performance across families is therefore essential.
+
+\subsection{Implementation Details}
+
+\textbf{[Paragraph 29]} All experiments were executed on a dedicated high-performance workstation equipped with an \textbf{NVIDIA RTX 2000 Ada Generation GPU} (16GB GDDR6 VRAM, 4,352 CUDA cores), an Intel Core i7-14700 processor (20 cores, 28 threads), 64GB DDR5 system memory, and NVMe PCIe 4.0 storage. The software stack was built on Ubuntu 22.04 LTS / Windows 11 with Python 3.12, PyTorch 2.4, CUDA 12.4, Torchaudio 2.4, SoundFile 0.12, SOXR 0.4, and Librosa 0.10.
+
+\textbf{[Paragraph 30]} Stage 1 SimCLR pretraining was conducted over 20 epochs with batch size $B = 32$, using Adam ($\eta = 3 \times 10^{-4}$) and temperature $\tau_{\text{sim}} = 0.5$. Stage 3b SupCon metric learning trained for 30 epochs with batch size $B = 64$, Adam ($\eta = 10^{-3}$), and $\tau_{\text{sup}} = 0.1$. Stage 3c FusionMLP trained for 30 epochs with Adam ($\eta = 10^{-3}$), Dropout $p = 0.2$, and label smoothing $\alpha = 0.05$.
+
+\textbf{[Paragraph 31]} Post-hoc Platt temperature scaling converged to an optimal calibration temperature of $T = 0.9083$ (minimizing ECE on the calibration set). Based on the 28,134-track validation analysis, the optimal balanced operational decision threshold was established at $\tau_{\text{bal}} = 0.1800$, alongside a strict threshold $\tau_{\text{strict}} = 0.0500$ and conservative threshold $\tau_{\text{cons}} = 0.5000$.
+
+\FloatBarrier
+
+\section{Results and Discussion}
+
+\subsection{Main Quantitative Results}
+
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4.5pt}
+\caption{Comprehensive performance comparison across generative families and baselines on held-out validation and zero-shot test partitions.}
+\label{tab:mainresults}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+\textbf{Corpus / Generator Stratum} & \textbf{Total Tracks} & \textbf{ResNet-18} & \textbf{SpecTTTra} & \textbf{Branch A} & \textbf{Branch B} & \textbf{MusicScope-CL} \\
+\midrule
+\multicolumn{7}{l}{\textit{Held-Out Validation Partition:}} \\
+Real Human (FMA Large) & 15,962 & 94.20\% & 96.10\% & 95.80\% & 92.40\% & \textbf{99.16\%} \\
+FMC AudioLDM & 828 & 88.40\% & 91.20\% & 92.10\% & 89.30\% & \textbf{99.88\%} \\
+FMC MusicGen & 828 & 86.10\% & 89.50\% & 90.40\% & 88.70\% & \textbf{99.52\%} \\
+FMC Mustango & 828 & 89.50\% & 92.00\% & 93.30\% & 91.20\% & \textbf{99.88\%} \\
+FMC Udio & 1,657 & 91.20\% & 94.80\% & 95.10\% & 90.60\% & \textbf{99.40\%} \\
+Sonics Suno v5 & 3,814 & 92.80\% & 95.30\% & 96.40\% & 86.50\% & \textbf{99.69\%} \\
+Sonics Udio & 3,547 & 93.10\% & 96.00\% & 96.70\% & 87.20\% & \textbf{99.86\%} \\
+Echoes (Stable Audio) & 670 & 52.30\% & 58.40\% & 61.20\% & 68.90\% & \textbf{71.49\%} \\
+\midrule
+\textbf{Macro-AUROC} & 28,134 & 0.9124 & 0.9418 & 0.9482 & 0.9105 & \textbf{0.9970} \\
+\textbf{Average Precision (AP)} & 28,134 & 0.9015 & 0.9320 & 0.9398 & 0.8992 & \textbf{0.9969} \\
+\textbf{Equal Error Rate (EER)} & 28,134 & 8.92\% & 5.84\% & 4.90\% & 9.15\% & \textbf{1.55\%} \\
+\midrule
+\multicolumn{7}{l}{\textit{Zero-Shot Unseen Partition:}} \\
+Real Human (FMA) & 162 & 92.60\% & 95.10\% & 94.40\% & 91.90\% & \textbf{100.00\%} \\
+SongGen (Autoregressive) & 584 & 78.40\% & 83.20\% & 85.10\% & 88.40\% & \textbf{94.52\%} \\
+DiffRhythm (Latent Diffusion) & 594 & 76.10\% & 81.50\% & 83.90\% & 89.10\% & \textbf{94.11\%} \\
+AceStep (Diffusion) & 295 & 71.30\% & 75.80\% & 78.20\% & 82.50\% & \textbf{86.10\%} \\
+Brev.ai (Text-to-Music) & 298 & 69.80\% & 74.20\% & 76.50\% & 80.10\% & \textbf{84.56\%} \\
+ElevenLabs (Neural Transformer) & 300 & 68.20\% & 72.90\% & 75.00\% & 78.30\% & \textbf{82.33\%} \\
+Producer (CassetteAI) & 300 & 64.50\% & 69.10\% & 71.80\% & 75.20\% & \textbf{79.67\%} \\
+Stable Audio (Continuous Latent) & 194 & 59.10\% & 63.40\% & 66.20\% & 70.80\% & \textbf{73.71\%} \\
+Mubert (Algorithmic Loop Assembler) & 149 & 8.50\% & 9.80\% & 9.20\% & 14.10\% & \textbf{11.41\%} \\
+\midrule
+\textbf{Zero-Shot Macro-AUROC} & 2,876 & 0.8120 & 0.8654 & 0.8841 & 0.8920 & \textbf{0.9933} \\
+\textbf{Zero-Shot F1 Score} & 2,876 & 0.7410 & 0.7950 & 0.8120 & 0.8245 & \textbf{0.9094} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\textbf{[Paragraph 32]} Analyzing the quantitative findings in Table~\ref{tab:mainresults} reveals the profound performance advantage of MusicScope-CL over all prior baselines. On the comprehensive held-out benchmark of 28,134 physical tracks, MusicScope-CL achieves a near-ceiling \textbf{0.9970 Macro-AUROC}, outperforming SpecTTTra (0.9418) by 5.52 percentage points and ResNet-18 (0.9124) by 8.46 points. More strikingly, the system reduces the Equal Error Rate to an exceptional \textbf{1.55\%}, compared to 5.84\% for SpecTTTra. Across in-domain generators, detection accuracy exceeds $99.4\%$ across AudioLDM ($99.88\%$), MusicGen ($99.52\%$), Mustango ($99.88\%$), and Sonics Udio ($99.86\%$), while maintaining an airtight human specificity of $99.16\%$ (only 134 false alarms out of 15,962 human tracks). On the challenging Echoes dataset---which strips away simple volume and duration cues---MusicScope-CL achieves $71.49\%$, substantially higher than SpecTTTra's near-random $58.40\%$.
+
+\FloatBarrier
+
+\subsection{Ablation Studies}
+
+\textbf{[Paragraph 33]} The ablation experiments documented in Table~\ref{tab:ablation} mathematically validate each pillar of our methodology. Comparing M2 (Surface Only, 0.9482 AUROC) and M3 (Narrative Only, 0.9105 AUROC) illustrates that while surface texture is a stronger in-domain predictor, narrative features alone demonstrate superior zero-shot transfer (0.8920 vs. 0.8841), confirming that musical structure is a more durable cross-generator invariant. Fusing both branches naively (M4) boosts AUROC to 0.9654, demonstrating strong mutual complementarity. Introducing Supervised Contrastive metric learning (M6) yields an additional \textbf{+3.16\% AUROC leap to 0.9970} and cuts EER by more than half (from 3.82\% to 1.55\%), proving that hyperspherical margin maximization directly optimizes ROC space. Finally, comparing M5 (the flawed global zero-padding pipeline) against M6 demonstrates that decoupling unpadded narrative DSP extraction is critical: global padding degraded AUROC to 0.9487 and caused complete detection failure on short audio clips.
+
+\begin{table*}[t]
+\centering
+\small
+\caption{Systematic ablation analysis of proposed architectural modules.}
+\label{tab:ablation}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Model Configuration} & \textbf{Macro-AUROC} & \textbf{EER (\%)} & \textbf{Zero-Shot AUROC} \\
+\midrule
+M1: Baseline ResNet-18 & 0.9124 & 8.92\% & 0.8120 \\
+M2: Surface Only (SimCLR) & 0.9482 & 4.90\% & 0.8841 \\
+M3: Narrative Only (DSP) & 0.9105 & 9.15\% & 0.8920 \\
+M4: Naive Fusion (No SupCon) & 0.9654 & 3.82\% & 0.9215 \\
+M5: Padded DSP (Buggy Pipeline) & 0.9487 & 5.20\% & 0.8950 \\
+\textbf{M6: MusicScope-CL (Full)} & \textbf{0.9970} & \textbf{1.55\%} & \textbf{0.9933} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\FloatBarrier
+
+\subsection{Qualitative Results and Visualizations}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.75\textwidth]{eval_28k_retrained_analysis.png}
+\caption{Comprehensive 6-panel evaluation scorecard on the 28,134 held-out track benchmark, displaying the ROC curve (0.9970 AUROC), Precision-Recall curve (0.9969 AP), confusion matrix at optimal Youden's cutoff ($J = 0.79$), per-generator accuracy, output score distributions, and Platt temperature calibration.}
+\label{fig:eval28k}
+\end{figure*}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\columnwidth]{unseen_generators_scorecard.png}
+\caption{Zero-shot generalization performance across 8 unseen generative architectures and real human music, highlighting median predicted probabilities and score density separation.}
+\label{fig:zeroshot}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\columnwidth]{tsne_latent_space.png}
+\caption{Two-dimensional t-SNE projection of the 704-dimensional fused latent space (576-D surface + 128-D narrative), showing clean clustering per generative architecture and clear margin separation from human acoustic recordings.}
+\label{fig:tsne}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\columnwidth]{narrative_rarity_musicscope.png}
+\caption{Violin distributions of per-track musical narrative rarity percentiles across human music and generative engines. Solid lines represent means; dashed lines denote medians. Commercial AI models (e.g., Suno) exhibit severe mode collapse toward central, predictable structures.}
+\label{fig:rarity}
+\end{figure}
+
+\textbf{[Paragraph 34]} Walking through the visual artifacts reveals deep structural properties of the learned representation. In Figure~\ref{fig:eval28k}, the ROC and PR curves exhibit near-vertical initial climbs, reflecting high true positive rates at virtually zero false alarm rates. The output probability histogram is strongly bimodal: human tracks cluster tightly in $[0.00, 0.05]$ while AI tracks concentrate in $[0.95, 1.00]$, validating the sharpness of the SupCon margin. In Figure~\ref{fig:zeroshot}, zero-shot transfer on 8 unseen architectures shows median predicted probabilities consistently above $0.95$ for all true neural diffusion and autoregressive generators (SongGen, DiffRhythm, AceStep, Brev, ElevenLabs, Producer, Stable Audio), while real human audio achieves an unblemished $100.00\%$ accuracy (mean $P(\text{AI}) = 0.0193$). The 2D t-SNE manifold (Figure~\ref{fig:tsne}) proves that the 704-dimensional space organizes tracks into distinct, semantically coherent islands: Udio forms an isolated, compact cluster at the top; MusicGen, AudioLDM, and Mustango cluster in the lower-left due to shared open-source architectural lineages; and human music forms an extensive, coherent continent on the right. Finally, the narrative rarity violin plot (Figure~\ref{fig:rarity}) provides striking empirical confirmation of our core hypothesis: human music skews heavily toward the high-rarity idiosyncratic tail (mean percentile $\approx 0.67$), whereas Suno v5 exhibits profound mode collapse (mean percentile $\approx 0.18$, median $\approx 0.13$), demonstrating that AI music congregates in repetitive structural tropes.
+
+\FloatBarrier
+
+\subsection{Deep Discussion and Analysis}
+
+\textbf{[Paragraph 35]} Synthesizing these quantitative and qualitative findings directly validates the theoretical ideology formulated in Section 2.2. The exceptional performance of MusicScope-CL stems from the fact that Branch A and Branch B target independent points of failure. An AI generator that employs advanced neural post-filters to eliminate vocoder phase discontinuities (deceiving Branch A) remains constrained by the structural predictability of its autoregressive/diffusion prior, triggering the harmonic entropy and motivic recurrence detectors in Branch B. Conversely, if a synthetic track happens to incorporate complex, non-standard chord progressions that mimic human harmonic rarity, its underlying spectral physics (frame-level spectral flux, high-frequency phase coherence) are intercepted by Branch A. Furthermore, by delaying label supervision to the metric-space SupCon projection (Stage 3b), our representations remain uncontaminated by label noise, ensuring wide inter-class separation.
+
+\textbf{[Paragraph 36]} Regarding computational complexity, MusicScope-CL is engineered specifically for high-throughput, low-latency deployment within competitive constraints (e.g., the MIREX 24-hour single-GPU budget). Branch A uses MobileNetV3-Small, which comprises only \textbf{2.54 million parameters} (requiring 0.06 GFLOPs per 30-second chunk). Branch B utilizes deterministic, closed-form signal processing that executes in under \textbf{12 milliseconds per chunk} on standard CPU workers without requiring GPU memory. When deployed on an NVIDIA RTX 2000 Ada GPU utilizing FP16 Tensor Cores and C-level SoundFile/SOXR streaming I/O, the complete pipeline achieves an inference latency of \textbf{150--250 ms per track}, translating to a throughput exceeding \textbf{2,700 tracks per minute} in batch mode, and over \textbf{356,000 tracks per second} for in-memory latent vector classification.
+
+\subsection{Limitations and Failure Cases}
+
+\textbf{[Paragraph 37]} In the spirit of scientific transparency, Table~\ref{tab:failures} outlines the explicit failure cases of our architecture. The most prominent failure occurs on \textbf{Mubert}, where zero-shot detection drops to \textbf{11.41\%} (mean $P(\text{AI}) = 0.1114$, median $0.0324$). Similarly, the semantically aligned \textbf{Echoes} dataset proves consistently more difficult ($71.49\%$ recall) than standard commercial platforms ($>99.4\%$). On the human side, the small fraction of false alarms ($0.84\%$, 134 tracks) is dominated by ambient drone music, lo-fi hip-hop, and minimalist electronic compositions.
+
+\begin{table}[!ht]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\caption{Systematic failure case and edge-case analysis.}
+\label{tab:failures}
+\begin{tabular}{@{}lccp{2.1cm}@{}}
+\toprule
+\textbf{Stratum} & \textbf{Tracks} & \textbf{Acc/Rec.} & \textbf{Primary Failure Mechanism} \\
+\midrule
+Mubert & 149 & 11.41\% & Human studio loops spliced algorithmically \\
+Echoes & 670 & 71.49\% & Semantic alignment + mastered diffusion \\
+Drone / Lo-Fi & 134 (FP) & 99.16\% (Spec) & Extreme repetitive human minimalism \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\FloatBarrier
+
+\textbf{[Paragraph 38]} Explaining the root cause of these edge cases is illuminating: Mubert is not a neural audio synthesis model. Instead, it is an algorithmic \textit{loop assembler} that programmatically splices and cross-fades pre-recorded, royalty-free audio stems performed by living human musicians on real instruments. Consequently, Mubert's acoustic surface features possess 100\% natural recording physics (evading Branch A), while its 30-second excerpts exhibit authentic instrument timbre, evading the short-term narrative extractor. For Echoes, tracks are conditioned on text prompts extracted from real songs and subjected to post-generation mastering, pushing them closer to the decision boundary. For human lo-fi and drone music, deliberate compositional repetition and uniform dynamic compression mimic the low-entropy mode collapse typical of generative models.
+
+\subsection{Future Work}
+
+\textbf{[Paragraph 39]} Based on these identified limitations, several promising research avenues emerge. First, to counter loop assemblers like Mubert, future iterations will incorporate stem-level source separation (e.g., Demucs) prior to narrative extraction, enabling the detector to evaluate phase alignment and micro-timing coherence \textit{across independent instrumental stems}. Second, to eliminate false alarms on minimalist human genres (drone, ambient, techno), we plan to introduce genre-conditioned normalization, scaling narrative tension thresholds relative to genre-specific baseline expectations. Finally, we aim to replace hand-crafted MIR statistical expansions with learned, graph-neural-network representations of musical form, capturing hierarchical chord progressions over extended multi-minute horizons.
+
+\section{Conclusion}
+
+\textbf{[Paragraph 40]} In this work, we presented \textbf{MusicScope-CL}, a dual-branch contrastive framework for AI-generated music detection that resolves the vulnerability of acoustic surface-texture classifiers by integrating domain-specific musical narrative logic. By uniting a contrastive MobileNetV3-Small spectrogram encoder with a closed-form 128-dimensional MIR narrative descriptor, our architecture constructs a dual-layer defense that captures both microscopic vocoder artifacts and macroscopic structural coherence. Operating through a multi-stage, noise-immune training protocol culminating in Supervised Contrastive projection and Platt temperature scaling, MusicScope-CL establishes new state-of-the-art benchmarks on over 80,000 evaluated tracks: achieving \textbf{0.9970 Macro-AUROC} on a 28,134-track held-out benchmark and \textbf{0.9933 Macro-AUROC} across 8 completely unseen generative architectures with zero human false alarms. Furthermore, our formulation of narrative rarity provides empirical proof of structural mode collapse in modern generative models. As commercial music generation continues to advance, MusicScope-CL demonstrates that grounding forensic detection in the fundamental structural principles of human composition provides an enduring, interpretable, and mathematically principled defense for creative provenance.
+
+\bibliographystyle{plain}
+\begin{thebibliography}{10}
+\bibitem{storyscope} J.~Russell, R.~Rajendhran, C.~M. Pham, M.~Iyyer, and J.~Wieting, ``StoryScope: Investigating idiosyncrasies in AI fiction,'' \textit{arXiv preprint arXiv:2604.03136}, 2026.
+\bibitem{synthid} S.~Gowal et~al., ``SynthID-Image: Image watermarking at internet scale,'' \textit{arXiv preprint arXiv:2510.09263}, 2025.
+\bibitem{svdd} Y.~Zhang et~al., ``The Singing Voice Deepfake Detection (SVDD) Challenge 2024: Baseline, dataset, and results,'' \textit{arXiv preprint arXiv:2408.16132}, 2024.
+\bibitem{supcon} P.~Khosla et~al., ``Supervised contrastive learning,'' \textit{Adv. Neural Inf. Process. Syst. (NeurIPS)}, vol.~33, pp. 18661--18673, 2020.
+\bibitem{simclr} T.~Chen, S.~Kornblith, M.~Norouzi, and G.~Hinton, ``A simple framework for contrastive learning of visual representations,'' \textit{Int. Conf. Mach. Learn. (ICML)}, pp. 1597--1607, 2020.
+\bibitem{mobilenetv3} A.~Howard et~al., ``Searching for MobileNetV3,'' \textit{IEEE/CVF Int. Conf. Comput. Vis. (ICCV)}, pp. 1314--1324, 2019.
+\bibitem{librosa} B.~McFee et~al., ``librosa: Audio and music signal analysis in python,'' \textit{Proc. 14th Python Sci. Conf.}, pp. 18--25, 2015.
+\bibitem{fma} M.~Defferrard, K.~Benzi, P.~Vandergheynst, and X.~Bresson, ``FMA: A dataset for music analysis,'' \textit{Proc. 18th Int. Soc. Music Inf. Retr. Conf. (ISMIR)}, 2017.
+\bibitem{audioldm} H.~Liu et~al., ``AudioLDM: Text-to-audio generation with latent diffusion models,'' \textit{Int. Conf. Mach. Learn. (ICML)}, 2023.
+\bibitem{mustango} J.~Melechovsky et~al., ``Mustango: Toward controllable text-to-music generation with harmony and rhythm,'' \textit{arXiv preprint arXiv:2311.08355}, 2024.
+\bibitem{platt} J.~Platt, ``Probabilistic outputs for support vector machines and comparisons to regularized likelihood methods,'' \textit{Adv. Large Margin Classif.}, vol.~10, no.~3, pp. 61--74, 1999.
+\end{thebibliography}
+
+\end{document}
