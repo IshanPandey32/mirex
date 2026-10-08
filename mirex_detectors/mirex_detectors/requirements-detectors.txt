@@ -1,0 +1,8 @@
+torch>=2.2
+torchaudio>=2.2
+soundfile>=0.12
+numpy
+scikit-learn
+transformers>=4.40      # CLAM + FST backbones (MERT needs trust_remote_code)
+nnAudio                 # imported by MERT's remote code
+beat-this               # FST 4-bar segmentation (optional; falls back to 10 s windows)
